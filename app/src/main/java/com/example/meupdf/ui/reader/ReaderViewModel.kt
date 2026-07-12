@@ -13,23 +13,28 @@ import com.example.meupdf.data.db.BookEntity
 import com.example.meupdf.data.db.BookmarkEntity
 import com.example.meupdf.data.dictionary.DictionaryRepository
 import com.example.meupdf.data.dictionary.WordDefinition
+import com.example.meupdf.data.prefs.ThemePrefs
 import com.example.meupdf.pdf.PdfEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 data class DefinitionUiState(val word: String, val definition: WordDefinition?, val loading: Boolean)
 
+enum class PageColorMode { NORMAL, DARK, SEPIA }
+
 class ReaderViewModel(
     private val bookId: Long,
     private val repo: LibraryRepository,
     private val pdfEngine: PdfEngine,
     private val dictionaryRepository: DictionaryRepository,
+    private val themePrefs: ThemePrefs,
 ) : ViewModel() {
 
     private val pdfDispatcher = Dispatchers.IO.limitedParallelism(1)
@@ -53,6 +58,8 @@ class ReaderViewModel(
         private set
     var definitionState by mutableStateOf<DefinitionUiState?>(null)
         private set
+    var pageColorMode by mutableStateOf(PageColorMode.NORMAL)
+        private set
 
     private var document: PdfEngine.OpenDocument? = null
     private var initialized = false
@@ -66,6 +73,9 @@ class ReaderViewModel(
                     openDocument(b)
                 }
             }
+        }
+        viewModelScope.launch {
+            pageColorMode = themePrefs.pageColorMode.first()
         }
     }
 
@@ -110,6 +120,11 @@ class ReaderViewModel(
         persistFont()
     }
 
+    fun scaleFont(factor: Float) {
+        fontScale = (fontScale * factor).coerceIn(0.6f, 2.5f)
+        persistFont()
+    }
+
     private fun persistFont() {
         viewModelScope.launch { repo.updateFontScale(bookId, fontScale) }
     }
@@ -144,6 +159,11 @@ class ReaderViewModel(
         definitionState = null
     }
 
+    fun changePageColorMode(mode: PageColorMode) {
+        pageColorMode = mode
+        viewModelScope.launch { themePrefs.setPageColorMode(mode) }
+    }
+
     override fun onCleared() {
         document?.close()
     }
@@ -153,9 +173,10 @@ class ReaderViewModel(
         private val repo: LibraryRepository,
         private val pdfEngine: PdfEngine,
         private val dictionaryRepository: DictionaryRepository,
+        private val themePrefs: ThemePrefs,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            ReaderViewModel(bookId, repo, pdfEngine, dictionaryRepository) as T
+            ReaderViewModel(bookId, repo, pdfEngine, dictionaryRepository, themePrefs) as T
     }
 }

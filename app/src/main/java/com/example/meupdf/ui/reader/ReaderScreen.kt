@@ -13,19 +13,27 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.TextDecrease
 import androidx.compose.material.icons.filled.TextIncrease
 import androidx.compose.material3.AlertDialog
@@ -44,6 +52,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
@@ -59,6 +70,7 @@ fun ReaderScreen(viewModel: ReaderViewModel, onBack: () -> Unit) {
     val book by viewModel.book.collectAsState()
     val bookmarks by viewModel.bookmarks.collectAsState()
     var showBookmarks by remember { mutableStateOf(false) }
+    var showColorModeDialog by remember { mutableStateOf(false) }
 
     Box(Modifier.fillMaxSize()) {
         if (viewModel.loadError) {
@@ -78,24 +90,26 @@ fun ReaderScreen(viewModel: ReaderViewModel, onBack: () -> Unit) {
 
         AnimatedVisibility(
             visible = viewModel.controlsVisible,
-            modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth(),
+            modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars),
             enter = fadeIn(),
             exit = fadeOut(),
         ) {
             TopControls(
                 title = book?.title.orEmpty(),
                 isBookmarked = bookmarks.any { it.page == viewModel.currentPage },
+                pageColorMode = viewModel.pageColorMode,
                 onBack = onBack,
                 onIncreaseFont = viewModel::increaseFont,
                 onDecreaseFont = viewModel::decreaseFont,
                 onToggleBookmark = viewModel::toggleBookmarkForCurrentPage,
                 onShowBookmarks = { showBookmarks = true },
+                onShowColorMode = { showColorModeDialog = true },
             )
         }
 
         AnimatedVisibility(
             visible = viewModel.controlsVisible,
-            modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
+            modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().windowInsetsPadding(WindowInsets.navigationBars),
             enter = fadeIn(),
             exit = fadeOut(),
         ) {
@@ -119,17 +133,57 @@ fun ReaderScreen(viewModel: ReaderViewModel, onBack: () -> Unit) {
             onDelete = viewModel::deleteBookmark,
         )
     }
+
+    if (showColorModeDialog) {
+        ColorModeDialog(
+            current = viewModel.pageColorMode,
+            onSelect = { viewModel.changePageColorMode(it); showColorModeDialog = false },
+            onDismiss = { showColorModeDialog = false },
+        )
+    }
 }
+
+private val InvertColorMatrix = ColorMatrix(
+    floatArrayOf(
+        -1f, 0f, 0f, 0f, 255f,
+        0f, -1f, 0f, 0f, 255f,
+        0f, 0f, -1f, 0f, 255f,
+        0f, 0f, 0f, 1f, 0f,
+    ),
+)
+
+private val SepiaColorMatrix = ColorMatrix(
+    floatArrayOf(
+        0.393f, 0.769f, 0.189f, 0f, 0f,
+        0.349f, 0.686f, 0.168f, 0f, 0f,
+        0.272f, 0.534f, 0.131f, 0f, 0f,
+        0f, 0f, 0f, 1f, 0f,
+    ),
+)
 
 @Composable
 private fun PageArea(viewModel: ReaderViewModel) {
     val density = LocalDensity.current
-    BoxWithConstraints(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.White)) {
+    val colorMode = viewModel.pageColorMode
+    val pageBackground = when (colorMode) {
+        PageColorMode.NORMAL -> Color.White
+        PageColorMode.DARK -> Color.Black
+        PageColorMode.SEPIA -> Color(0xFFF4ECD8)
+    }
+    val pageColorFilter = when (colorMode) {
+        PageColorMode.NORMAL -> null
+        PageColorMode.DARK -> ColorFilter.colorMatrix(InvertColorMatrix)
+        PageColorMode.SEPIA -> ColorFilter.colorMatrix(SepiaColorMatrix)
+    }
+    BoxWithConstraints(Modifier.fillMaxSize().background(pageBackground)) {
         val baseWidthPx = with(density) { maxWidth.toPx() }.roundToInt()
         val baseHeightPx = with(density) { maxHeight.toPx() }.roundToInt()
         val fontScale = viewModel.fontScale
-        val renderWidthPx = (baseWidthPx * fontScale).roundToInt().coerceAtLeast(1)
         val aspect = viewModel.pageAspectRatio()
+        // Fit the whole page inside the available area first, then scale that
+        // baseline by fontScale so pinch/zoom enlarges from a page that already fits.
+        val fitWidthPx = minOf(baseWidthPx, (baseHeightPx * aspect).roundToInt()).coerceAtLeast(1)
+        val renderWidthPx = (fitWidthPx * fontScale).roundToInt().coerceAtLeast(1)
         val renderHeightPx = (renderWidthPx / aspect).roundToInt().coerceAtLeast(1)
 
         val bitmapState = produceState<android.graphics.Bitmap?>(
@@ -156,6 +210,7 @@ private fun PageArea(viewModel: ReaderViewModel) {
                                 else -> viewModel.toggleControls()
                             }
                         },
+                        onDoubleTap = { viewModel.scaleFont(1.1f) },
                         onLongPress = { offset ->
                             viewModel.onWordLongPress(offset.x, offset.y, renderWidthPx, renderHeightPx)
                         },
@@ -166,6 +221,7 @@ private fun PageArea(viewModel: ReaderViewModel) {
                 Image(
                     bitmap = bmp.asImageBitmap(),
                     contentDescription = null,
+                    colorFilter = pageColorFilter,
                     modifier = Modifier.width(with(density) { renderWidthPx.toDp() }),
                 )
             }
@@ -177,11 +233,13 @@ private fun PageArea(viewModel: ReaderViewModel) {
 private fun TopControls(
     title: String,
     isBookmarked: Boolean,
+    pageColorMode: PageColorMode,
     onBack: () -> Unit,
     onIncreaseFont: () -> Unit,
     onDecreaseFont: () -> Unit,
     onToggleBookmark: () -> Unit,
     onShowBookmarks: () -> Unit,
+    onShowColorMode: () -> Unit,
 ) {
     val palette = LocalGlassPalette.current
     GlassPanel(modifier = Modifier.fillMaxWidth().padding(12.dp), cornerRadius = 18.dp) {
@@ -205,6 +263,17 @@ private fun TopControls(
             IconButton(onClick = onIncreaseFont) {
                 Icon(Icons.Filled.TextIncrease, contentDescription = "Larger text", tint = palette.textPrimary)
             }
+            IconButton(onClick = onShowColorMode) {
+                Icon(
+                    when (pageColorMode) {
+                        PageColorMode.NORMAL -> Icons.Filled.LightMode
+                        PageColorMode.DARK -> Icons.Filled.DarkMode
+                        PageColorMode.SEPIA -> Icons.Filled.MenuBook
+                    },
+                    contentDescription = "Page color mode",
+                    tint = palette.textPrimary,
+                )
+            }
             IconButton(onClick = onShowBookmarks) {
                 Icon(Icons.Filled.List, contentDescription = "Bookmarks", tint = palette.textPrimary)
             }
@@ -217,6 +286,34 @@ private fun TopControls(
             }
         }
     }
+}
+
+@Composable
+private fun ColorModeDialog(current: PageColorMode, onSelect: (PageColorMode) -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Page color") },
+        text = {
+            Column {
+                listOf(
+                    PageColorMode.NORMAL to "Normal",
+                    PageColorMode.DARK to "Dark",
+                    PageColorMode.SEPIA to "Sepia",
+                ).forEach { (mode, label) ->
+                    Row(
+                        Modifier.fillMaxWidth().clickable { onSelect(mode) }.padding(vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(label, modifier = Modifier.weight(1f))
+                        if (mode == current) {
+                            Icon(Icons.Filled.Check, contentDescription = null)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { Text("Close", modifier = Modifier.padding(12.dp).clickable(onClick = onDismiss)) },
+    )
 }
 
 @Composable

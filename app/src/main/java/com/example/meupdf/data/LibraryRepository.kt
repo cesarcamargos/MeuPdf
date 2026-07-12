@@ -23,6 +23,7 @@ class LibraryRepository(private val context: Context) {
     fun observeBooks(): Flow<List<BookEntity>> = bookDao.observeAll()
     fun observeSections(): Flow<List<SectionEntity>> = sectionDao.observeAll()
     fun observeBook(id: Long): Flow<BookEntity?> = bookDao.observeById(id)
+    suspend fun getBook(id: Long): BookEntity? = withContext(Dispatchers.IO) { bookDao.getById(id) }
     fun observeBookmarks(bookId: Long): Flow<List<BookmarkEntity>> = bookmarkDao.observeForBook(bookId)
 
     suspend fun createSection(name: String): Long = withContext(Dispatchers.IO) {
