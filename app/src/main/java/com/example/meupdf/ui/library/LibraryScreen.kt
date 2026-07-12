@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -59,6 +60,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import com.example.meupdf.data.db.BookEntity
 import com.example.meupdf.data.db.SectionEntity
 import com.example.meupdf.ui.common.rememberCoverBitmap
@@ -75,6 +77,7 @@ fun LibraryScreen(
     themeMode: ThemeMode,
     onThemeModeChange: (ThemeMode) -> Unit,
     onOpenBook: (Long) -> Unit,
+    onLoggedOut: () -> Unit,
 ) {
     val palette = LocalGlassPalette.current
     val sections by viewModel.sections.collectAsState()
@@ -82,6 +85,7 @@ fun LibraryScreen(
 
     var showAddSection by remember { mutableStateOf(false) }
     var bookForOptions by remember { mutableStateOf<BookEntity?>(null) }
+    var sectionForOptions by remember { mutableStateOf<SectionGroup?>(null) }
     var pendingImportSectionId by remember { mutableStateOf<Long?>(null) }
 
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -90,6 +94,12 @@ fun LibraryScreen(
     fun launchImport(sectionId: Long?) {
         pendingImportSectionId = sectionId
         importLauncher.launch(arrayOf("application/pdf"))
+    }
+
+    // The cloud delivers other devices' changes asynchronously; re-sync whenever we return to front.
+    LifecycleResumeEffect(Unit) {
+        viewModel.sync()
+        onPauseOrDispose { }
     }
 
     // Drag-to-move-between-sections state.
@@ -131,6 +141,9 @@ fun LibraryScreen(
                 }
                 IconButton(onClick = { launchImport(null) }) {
                     Icon(Icons.Filled.Add, contentDescription = "Import PDF", tint = palette.textPrimary)
+                }
+                IconButton(onClick = { viewModel.logout(onLoggedOut) }) {
+                    Icon(Icons.Filled.Logout, contentDescription = "Log out", tint = palette.textPrimary)
                 }
             }
         }
@@ -177,6 +190,15 @@ fun LibraryScreen(
                                 contentDescription = "Add book to ${group.name}",
                                 tint = palette.textSecondary,
                             )
+                        }
+                        if (group.sectionId != null) {
+                            IconButton(onClick = { sectionForOptions = group }) {
+                                Icon(
+                                    Icons.Filled.MoreVert,
+                                    contentDescription = "Section options for ${group.name}",
+                                    tint = palette.textSecondary,
+                                )
+                            }
                         }
                     }
                     if (group.books.isEmpty()) {
@@ -257,6 +279,18 @@ fun LibraryScreen(
             onMoveToSection = { sectionId -> viewModel.moveBookToSection(book.id, sectionId); bookForOptions = null },
             onDelete = { viewModel.deleteBook(book); bookForOptions = null },
         )
+    }
+
+    sectionForOptions?.let { group ->
+        val sectionId = group.sectionId
+        if (sectionId != null) {
+            SectionOptionsDialog(
+                currentName = group.name,
+                onRename = { newName -> viewModel.renameSection(sectionId, newName); sectionForOptions = null },
+                onDelete = { viewModel.deleteSection(sectionId); sectionForOptions = null },
+                onDismiss = { sectionForOptions = null },
+            )
+        }
     }
 }
 
@@ -381,6 +415,55 @@ private fun AddSectionDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit)
         },
         confirmButton = { Text("Create", modifier = Modifier.padding(12.dp).clickable { onConfirm(name) }) },
         dismissButton = { Text("Cancel", modifier = Modifier.padding(12.dp).clickable(onClick = onDismiss)) },
+    )
+}
+
+@Composable
+private fun SectionOptionsDialog(
+    currentName: String,
+    onRename: (String) -> Unit,
+    onDelete: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var name by remember { mutableStateOf(currentName) }
+    var confirmDelete by remember { mutableStateOf(false) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (confirmDelete) "Delete section?" else "Section") },
+        text = {
+            if (confirmDelete) {
+                Text("\"$currentName\" will be removed. Its books stay in your library (moved to Uncategorized).")
+            } else {
+                Column {
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it },
+                        singleLine = true,
+                        label = { Text("Name") },
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        "Delete section",
+                        color = Color(0xFFC44D4D),
+                        modifier = Modifier.fillMaxWidth().clickable { confirmDelete = true }.padding(vertical = 8.dp),
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            if (confirmDelete) {
+                Text("Delete", color = Color(0xFFC44D4D), modifier = Modifier.padding(12.dp).clickable(onClick = onDelete))
+            } else {
+                Text("Save", modifier = Modifier.padding(12.dp).clickable { if (name.isNotBlank()) onRename(name) })
+            }
+        },
+        dismissButton = {
+            Text(
+                if (confirmDelete) "Cancel" else "Close",
+                modifier = Modifier.padding(12.dp).clickable { if (confirmDelete) confirmDelete = false else onDismiss() },
+            )
+        },
     )
 }
 

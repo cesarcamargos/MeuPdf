@@ -4,7 +4,6 @@ import android.graphics.Bitmap
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.core.net.toUri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -80,8 +79,14 @@ class ReaderViewModel(
     }
 
     private suspend fun openDocument(b: BookEntity) {
+        val openUri = repo.resolveOpenUri(b)
+        if (openUri == null) {
+            loadError = true
+            isLoading = false
+            return
+        }
         withContext(pdfDispatcher) {
-            runCatching { pdfEngine.open(b.uri.toUri()) }
+            runCatching { pdfEngine.open(openUri) }
                 .onSuccess { opened ->
                     document = opened
                     pageCount = opened.pageCount

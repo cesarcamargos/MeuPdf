@@ -1,0 +1,13 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "FUNCTIONS_WORKER_RUNTIME": "node",
+    "AzureWebJobsFeatureFlags": "EnableWorkerIndexing",
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "STORAGE_CONNECTION_STRING": "<connection string da Storage Account de dados>",
+    "STORAGE_CONTAINER": "meupdf",
+    "AUTH_EMAIL": "voce@exemplo.com",
+    "AUTH_PASSWORD_HASH": "<gere com: npm run hash -- \"suaSenha\">",
+    "JWT_SECRET": "<string aleatoria longa e secreta>"
+  }
+}

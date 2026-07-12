@@ -10,6 +10,9 @@ data class SectionEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
     val orderIndex: Int = 0,
+    val syncId: String? = null,           // stable cross-device id (UUID)
+    val updatedAt: Long = 0,              // for last-write-wins merge
+    val deleted: Boolean = false,         // tombstone so deletions propagate
 )
 
 @Entity(
@@ -34,6 +37,11 @@ data class BookEntity(
     val pageCount: Int = 0,
     val fontScale: Float = 1.0f,
     val dateAdded: Long = System.currentTimeMillis(),
+    val contentHash: String? = null,      // SHA-256 of the PDF bytes; stable across devices (cloud key)
+    val relativePath: String? = null,     // legacy: file name inside the old synced SAF tree (unused in cloud mode)
+    val progressUpdatedAt: Long = 0,      // last-write-wins timestamp for this book's progress
+    val deleted: Boolean = false,         // tombstone so deletions propagate across devices
+    val pendingUpload: Boolean = false,   // PDF/cover not yet uploaded to the cloud (retry in background)
 )
 
 @Entity(

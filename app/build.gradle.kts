@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -18,6 +20,18 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // Base URL of the Azure Function. Override via -PfunctionBaseUrl=... or
+        // meupdf.functionBaseUrl=... in local.properties. Trailing slash optional.
+        val functionBaseUrl = (project.findProperty("functionBaseUrl") as String?)
+            ?: run {
+                val props = Properties()
+                val f = rootProject.file("local.properties")
+                if (f.exists()) f.inputStream().use { stream -> props.load(stream) }
+                props.getProperty("meupdf.functionBaseUrl")
+            }
+            ?: "https://meupdf-func.azurewebsites.net"
+        buildConfigField("String", "FUNCTION_BASE_URL", "\"${functionBaseUrl.trimEnd('/')}\"")
     }
 
     buildTypes {
@@ -35,6 +49,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
     androidResources {
         noCompress.add("sqlite")
@@ -64,6 +79,8 @@ dependencies {
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.pdfium)
+    implementation(libs.okhttp)
+    implementation(libs.androidx.work.runtime.ktx)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
